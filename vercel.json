@@ -1,0 +1,1 @@
+{"$schema":"https://openapi.vercel.sh/vercel.json","functions":{"api/guard.js":{"includeFiles":"artifacts/{sentinel.wasm,sentinel_final.zkey,vk.json,circuit-info.json}","maxDuration":10}}}

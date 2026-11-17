@@ -1,0 +1,1 @@
+{"author":"","dependencies":{"snarkjs":"0.7.6"},"description":"Sentinel — wallet & transaction guard. zkVerify Agent Games Season 01, Wildcard track.","engines":{"node":"22.x"},"keywords":[],"license":"ISC","main":"server.mjs","name":"sentinel","scripts":{"start":"node server.mjs","test":"node test-guard.mjs"},"type":"module","version":"1.0.0"}
