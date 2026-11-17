@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel — wallet &amp; transaction guard</title>
+<style>
+  :root { --bg:#0d1117; --card:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e;
+    --green:#3fb950; --yellow:#d29922; --red:#f85149; --blue:#58a6ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:28px 18px 60px; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  h1 .tag { color:var(--blue); }
+  p.muted, .muted { color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; margin:16px 0; }
+  label { display:block; font-size:13px; color:var(--muted); margin:12px 0 4px; }
+  input, select { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:6px;
+    background:#0d1117; color:var(--text); font:14px ui-monospace,Menlo,Consolas,monospace; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > div { flex:1 1 220px; }
+  button { cursor:pointer; border:1px solid var(--line); border-radius:6px; background:#21262d;
+    color:var(--text); padding:9px 14px; font-size:14px; }
+  button.primary { background:#1f6feb; border-color:#1f6feb; color:#fff; font-weight:600; }
+  button:hover { filter:brightness(1.15); }
+  .presets { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .presets button { font-size:13px; padding:7px 10px; }
+  #verdict { font-size:26px; font-weight:700; letter-spacing:.04em; }
+  #verdict.ALLOW { color:var(--green); } #verdict.REVIEW { color:var(--yellow); } #verdict.BLOCK { color:var(--red); }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; margin:2px 4px 2px 0;
+    border:1px solid var(--line); background:#0d1117; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  td, th { border-bottom:1px solid var(--line); padding:7px 6px; text-align:left; vertical-align:top; }
+  .pass { color:var(--green); } .fail { color:var(--red); } .unknown { color:var(--yellow); }
+  pre { background:#0d1117; border:1px solid var(--line); border-radius:6px; padding:12px;
+    overflow-x:auto; font-size:12.5px; white-space:pre-wrap; word-break:break-word; }
+  code { font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .hidden { display:none; }
+  .mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sentinel <span class="tag">— wallet &amp; transaction guard</span></h1>
+  <p class="muted">Paste an ERC-20 approval and Sentinel screens it against a published, deterministic
+  rule set — then returns a verdict (<b>ALLOW / REVIEW / BLOCK</b>) with the exact checks run and a
+  Groth16 proof that the verdict followed the rules. Read-only: nothing is signed, nothing moves.
+  Built for the zkVerify Agent Games Wildcard track. Chain: BSC mainnet.</p>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label for="wallet">Wallet (the approver)</label>
+        <input id="wallet" value="0xF977814e90dA44bFA03b6295A0616a897441aceC" spellcheck="false">
+      </div>
+      <div>
+        <label for="token">Token contract</label>
+        <input id="token" value="0x55d398326f99059fF775485246999027B3197955" spellcheck="false">
+        <div class="muted" style="font-size:12px;margin-top:3px">default: USDT (BEP-20) on BSC</div>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="spender">Spender (who receives the approval)</label>
+        <input id="spender" value="0x10ED43C718714eb63d5aA57B78B54704E256024E" spellcheck="false">
+        <div class="muted" style="font-size:12px;margin-top:3px">default: PancakeSwap Router v2</div>
+      </div>
+      <div>
+        <label for="amount">Amount (raw token units — or "max" for unlimited)</label>
+        <input id="amount" value="1000000000000000000" spellcheck="false">
+        <div class="muted" style="font-size:12px;margin-top:3px">1 USDT = 1,000,000,000,000,000,000 (18 decimals on BSC)</div>
+      </div>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="primary" id="checkBtn">Screen this approval</button>
+      <button id="maxBtn" type="button">Set amount to max</button>
+    </div>
+    <div class="presets">
+      <span class="muted" style="align-self:center">Try:</span>
+      <button type="button" data-preset="unlimited">1 · unlimited → unknown spender</button>
+      <button type="button" data-preset="allow">2 · small → PancakeSwap router</button>
+      <button type="button" data-preset="exceeds">3 · amount &gt; balance</button>
+      <button type="button" data-preset="malformed">4 · malformed input</button>
+    </div>
+  </div>
+
+  <div id="result" class="card hidden">
+    <div id="verdict">—</div>
+    <div id="reasons" style="margin:8px 0"></div>
+    <div id="error" class="hidden" style="color:var(--red)"></div>
+    <h3 style="margin:18px 0 6px">Checks run</h3>
+    <table><thead><tr><th>Check</th><th>Outcome</th><th>Detail</th></tr></thead><tbody id="checks"></tbody></table>
+    <h3 style="margin:18px 0 6px">Facts observed on-chain</h3>
+    <pre id="facts">—</pre>
+    <h3 style="margin:18px 0 6px">Groth16 proof</h3>
+    <div id="proofBox"></div>
+    <p class="muted" id="took" style="font-size:12.5px"></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 8px">How the verdict is decided</h3>
+    <ul style="margin:0;padding-left:20px">
+      <li><b>BLOCK</b> — spender is the zero address, the token has no code, a bounded amount exceeds the wallet's balance, or the approval is unlimited <i>and</i> the spender is unknown or has no code.</li>
+      <li><b>REVIEW</b> — unlimited approval to a known spender, spender has no code, spender is unknown (a contract outside the curated known-spender set), or any fact could not be observed (RPC error — fail closed, never ALLOW on unknown).</li>
+      <li><b>ALLOW</b> — bounded amount, real token contract, balance sufficient, spender is a known contract from the curated set.</li>
+    </ul>
+    <p class="muted" style="margin:12px 0 0">Thresholds: unlimited = amount ≥ 2<sup>255</sup>;
+    "unknown" spender = a contract outside the curated known-spender set — public BSC full nodes
+    prune historical state, so an on-chain age check is not possible (see README “Why an allowlist”).
+    The proof (claim <code>sentinel-v1</code>) shows the verdict is exactly the output of this rule
+    from the observed facts — it does not prove the RPC facts themselves; those are independently
+    checkable on-chain. Full rules, limits and the verification key are in the
+    <a href="https://github.com/Cuanonli/sentinel" style="color:var(--blue)">README</a> (repo URL is a placeholder until published).</p>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const USDT = "0x55d398326f99059fF775485246999027B3197955";
+const ROUTER = "0x10ED43C718714eb63d5aA57B78B54704E256024E";
+const BINANCE_HOT = "0xF977814e90dA44bFA03b6295A0616a897441aceC";
+const EMPTY_WALLET = "0x9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f00";
+const UNKNOWN_SPENDER = "0x1234567890123456789012345678901234567890";
+
+const presets = {
+  unlimited: { wallet: BINANCE_HOT, token: USDT, spender: UNKNOWN_SPENDER, amount: "max" },
+  allow:     { wallet: BINANCE_HOT, token: USDT, spender: ROUTER, amount: "1000000000000000000" },
+  exceeds:   { wallet: EMPTY_WALLET, token: USDT, spender: ROUTER, amount: "1000000000000000000000" },
+  malformed: { wallet: "not-an-address", token: USDT, spender: ROUTER, amount: "abc" },
+};
+
+document.querySelectorAll("[data-preset]").forEach((b) => {
+  b.addEventListener("click", () => {
+    const p = presets[b.dataset.preset];
+    $("wallet").value = p.wallet; $("token").value = p.token;
+    $("spender").value = p.spender; $("amount").value = p.amount;
+    check();
+  });
+});
+$("maxBtn").addEventListener("click", () => { $("amount").value = "max"; });
+$("checkBtn").addEventListener("click", check);
+
+async function check() {
+  const btn = $("checkBtn");
+  btn.disabled = true; btn.textContent = "Screening…";
+  const body = {
+    type: "sentinel.guard.v1",
+    wallet: $("wallet").value.trim(),
+    token: $("token").value.trim(),
+    spender: $("spender").value.trim(),
+    amount: $("amount").value.trim(),
+  };
+  try {
+    const res = await fetch("/api/guard", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const out = await res.json();
+    render(out);
+  } catch (e) {
+    render({ verdict: "REVIEW", reason_codes: ["RPC_ERROR"], error: "Could not reach the guard endpoint: " + e.message, checks: [], facts: null, proof: null, proof_omitted: "endpoint unreachable" });
+  } finally {
+    btn.disabled = false; btn.textContent = "Screen this approval";
+  }
+}
+
+function render(out) {
+  $("result").classList.remove("hidden");
+  const v = $("verdict");
+  v.textContent = out.verdict || "REVIEW";
+  v.className = out.verdict || "REVIEW";
+  $("reasons").innerHTML = (out.reason_codes || []).map((r) => `<span class="pill mono">${r}</span>`).join("");
+  const err = $("error");
+  if (out.error) { err.textContent = out.error; err.classList.remove("hidden"); }
+  else { err.classList.add("hidden"); }
+  $("checks").innerHTML = (out.checks || []).map((c) =>
+    `<tr><td class="mono">${c.name}</td><td class="${c.outcome}">${c.outcome}</td><td>${escapeHtml(c.detail || "")}</td></tr>`).join("")
+    || `<tr><td colspan="3" class="muted">no checks recorded</td></tr>`;
+  $("facts").textContent = out.facts ? JSON.stringify(out.facts, null, 2) : "—";
+  const pb = $("proofBox");
+  if (out.proof) {
+    const sig = out.proof.public_signals || [];
+    pb.innerHTML = `<p><span class="pill">claim: ${escapeHtml(out.proof.claim || "sentinel-v1")}</span>
+      <span class="pill">${escapeHtml(out.proof.protocol || "groth16")} / ${escapeHtml(out.proof.curve || "bn128")}</span></p>
+      <p class="mono" style="font-size:12.5px">public signals: [${sig.join(", ")}]<br>
+      vk sha256: ${escapeHtml((out.proof.vk_sha256 || "").slice(0, 32))}…<br>
+      proof: ${escapeHtml(JSON.stringify(out.proof.proof).slice(0, 220))}…</p>
+      <p class="muted" style="font-size:12.5px">Verify offline with snarkjs against the published
+      <code>artifacts/vk.json</code> — see README “Verifying a proof”.</p>`;
+  } else {
+    pb.innerHTML = `<p class="muted">No proof for this verdict. ${escapeHtml(out.proof_omitted || "")}</p>`;
+  }
+  $("took").textContent = out.tookMs !== undefined ? `Checked in ${out.tookMs} ms · ${out.checkedAt || ""}` : "";
+  $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+</script>
+</body>
+</html>
