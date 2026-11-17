@@ -1,0 +1,32 @@
+{
+  "name": "sentinel",
+  "claim": "sentinel-v1: verdict == rule(unlimited, spenderZero, spenderNoCode, spenderUnknown, tokenNoCode, exceedsBalance); verdict 0=ALLOW 1=REVIEW 2=BLOCK",
+  "curve": "bn128",
+  "protocol": "groth16",
+  "circuit": "circuits/sentinel.circom",
+  "publicSignals": [
+    "unlimited",
+    "spenderZero",
+    "spenderNoCode",
+    "spenderUnknown",
+    "tokenNoCode",
+    "exceedsBalance",
+    "verdict"
+  ],
+  "verificationKeySha256": "e54fe9c7793e78c1439bff11a62952167743fe0a9442573baa834f71c0d67bed",
+  "artifacts": {
+    "wasm": {
+      "file": "artifacts/sentinel.wasm",
+      "sha256": "fde15719715fe6624be209bca7f5142aba45e278fb0cd89a3cb377d378d94a86"
+    },
+    "zkey": {
+      "file": "artifacts/sentinel_final.zkey",
+      "sha256": "a121affc96038d35352c827a9823ad6ccac77d8396e0e7ea462f9172ced94364"
+    },
+    "vk": {
+      "file": "artifacts/vk.json",
+      "sha256": "e54fe9c7793e78c1439bff11a62952167743fe0a9442573baa834f71c0d67bed"
+    }
+  },
+  "setup": "local single-contributor Powers of Tau (bn128, 2^12) + Groth16 setup; ceremony transcript in build/ (pot12_*.ptau, sentinel_0000.zkey). Suitable for a demo/competition entry, not a production trusted setup."
+}
